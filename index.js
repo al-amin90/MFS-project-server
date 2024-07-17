@@ -2,6 +2,8 @@ const { MongoClient, ServerApiVersion } = require("mongodb");
 const express = require("express");
 const cookieParser = require("cookie-parser");
 const cors = require("cors");
+const bcrypt = require("bcrypt");
+
 const app = express();
 require("dotenv").config();
 const port = process.env.PORT || 5000;
@@ -21,18 +23,60 @@ const client = new MongoClient(uri, {
   },
 });
 
-const db = client.db("mfc-project");
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
 
+    const db = client.db("mfsProject");
     const usersCollection = db.collection("users");
 
+    // sing up and log in
+
     // write all mongodb api code here
-    app.post("/users", (req, res) => {
+    app.post("/users", async (req, res) => {
       const currentUser = req.body;
-      console.log(currentUser);
+
+      // check if the user already exits in the database
+      const existingUser = await usersCollection.findOne({
+        email: currentUser.email,
+      });
+      console.log(existingUser);
+
+      if (existingUser) {
+        res.send({ result: "user already exits. Choose Other Email" });
+        return;
+      }
+
+      // hash the password useing bcrypt
+      const saltRounds = 10;
+      const hashPassword = await bcrypt.hash(currentUser.password, saltRounds);
+      currentUser.password = hashPassword;
+      const result = await usersCollection.insertOne(currentUser);
+      res.send(result);
+    });
+
+    app.post("/login", async (req, res) => {
+      try {
+        const check = await usersCollection.findOne({ email: req.body.email });
+        console.log(check);
+        if (!check) {
+          res.send({ result: "user email not found" });
+        }
+
+        // compare the hash password from the database with the plain text
+        const isPasswordMatch = await bcrypt.compare(
+          req.body.password,
+          check.password
+        );
+        console.log(isPasswordMatch);
+        if (isPasswordMatch) {
+          res.send({ result: true }).status(200);
+          return;
+        } else {
+          res.send({ result: "Wrong Password" });
+        }
+      } catch {}
     });
 
     // Send a ping to confirm a successful connection
@@ -42,7 +86,7 @@ async function run() {
     );
   } finally {
     // Ensures that the client will close when you finish/error
-    await client.close();
+    // await client.close();
   }
 }
 run().catch(console.dir);
